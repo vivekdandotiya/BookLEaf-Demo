@@ -1,0 +1,17 @@
+{
+  "name": "bookleaf-author-support-portal",
+  "version": "1.0.0",
+  "description": "BookLeaf Author Support & Communication Portal",
+  "private": true,
+  "scripts": {
+    "install:all": "npm --prefix backend install && npm --prefix frontend install",
+    "seed": "npm --prefix backend run seed",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "test": "npm --prefix backend test",
+    "ai:eval": "npm --prefix backend run ai:eval"
+  },
+  "keywords": ["bookleaf", "publishing", "author-support", "ai", "fullstack"],
+  "author": "BookLeaf Engineering Candidate",
+  "license": "ISC"
+}

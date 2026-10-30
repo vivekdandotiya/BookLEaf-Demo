@@ -1,0 +1,243 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "BookLeaf Author Support & Communication Portal API",
+    "version": "1.0.0",
+    "description": "Production REST API for BookLeaf Publishing's Author Support & Operations Portal. Built for Full Stack Developer Assignment 1."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5000/api/v1",
+      "description": "Local Development Server"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Enter the JWT token received from /auth/login"
+      }
+    },
+    "schemas": {
+      "ApiResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "type": "object" },
+          "meta": { "type": "object" }
+        }
+      },
+      "ApiError": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": false },
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": { "type": "string" },
+              "message": { "type": "string" },
+              "details": { "type": "array", "items": { "type": "object" } }
+            }
+          }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": ["email", "password"],
+        "properties": {
+          "email": { "type": "string", "example": "priya.sharma@email.com" },
+          "password": { "type": "string", "example": "Author@12345" }
+        }
+      },
+      "TicketCreateRequest": {
+        "type": "object",
+        "required": ["subject", "description"],
+        "properties": {
+          "bookId": { "type": "string", "nullable": true, "example": "65e012..." },
+          "subject": { "type": "string", "example": "Quarterly royalty payment status" },
+          "description": { "type": "string", "example": "I published my book 4 months ago and have not seen the payout in my account." },
+          "attachments": { "type": "array", "items": { "type": "object" } }
+        }
+      },
+      "MessageRequest": {
+        "type": "object",
+        "required": ["body"],
+        "properties": {
+          "body": { "type": "string", "example": "Thank you for the update, here are my bank confirmation receipts." },
+          "attachments": { "type": "array", "items": { "type": "object" } }
+        }
+      },
+      "NoteRequest": {
+        "type": "object",
+        "required": ["body"],
+        "properties": {
+          "body": { "type": "string", "example": "Escalated to accounts team to verify bank IFSC code." }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health check",
+        "responses": { "200": { "description": "System health and DB connection state" } }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "summary": "User Login",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LoginRequest" } } }
+        },
+        "responses": { "200": { "description": "JWT token and user metadata" }, "401": { "description": "Invalid credentials" } }
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "summary": "Get authenticated user profile",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "200": { "description": "User profile" }, "401": { "description": "Unauthorized" } }
+      }
+    },
+    "/authors/me/dashboard": {
+      "get": {
+        "summary": "Author dashboard metrics",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "200": { "description": "Aggregated book stats, sales, and royalties" } }
+      }
+    },
+    "/authors/me/books": {
+      "get": {
+        "summary": "List author's books",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "200": { "description": "Array of author books" } }
+      }
+    },
+    "/tickets": {
+      "post": {
+        "summary": "Create support ticket",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TicketCreateRequest" } } }
+        },
+        "responses": { "201": { "description": "Ticket created and queued for AI classification" } }
+      },
+      "get": {
+        "summary": "List author tickets",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "200": { "description": "Array of tickets" } }
+      }
+    },
+    "/tickets/{id}": {
+      "get": {
+        "summary": "Get ticket details and public conversation",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Ticket and message thread" }, "404": { "description": "Ticket not found" } }
+      }
+    },
+    "/tickets/{id}/messages": {
+      "post": {
+        "summary": "Author post reply to ticket",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MessageRequest" } } }
+        },
+        "responses": { "201": { "description": "Message posted and broadcast via Socket.io" } }
+      }
+    },
+    "/admin/dashboard": {
+      "get": {
+        "summary": "Admin operations metrics and chart data",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "200": { "description": "Totals, status distribution, average response times" } }
+      }
+    },
+    "/admin/tickets": {
+      "get": {
+        "summary": "Admin ticket queue with search, filtering, and pagination",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "200": { "description": "Paginated list of tickets" } }
+      }
+    },
+    "/admin/tickets/{id}": {
+      "get": {
+        "summary": "Admin view ticket with internal notes & AI meta",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Full ticket details, public messages, and internal notes" } }
+      }
+    },
+    "/admin/tickets/{id}/status": {
+      "patch": {
+        "summary": "Update ticket status",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "200": { "description": "Status updated" } }
+      }
+    },
+    "/admin/tickets/{id}/category": {
+      "patch": {
+        "summary": "Override ticket category",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "200": { "description": "Category updated, source marked manual" } }
+      }
+    },
+    "/admin/tickets/{id}/priority": {
+      "patch": {
+        "summary": "Override ticket priority",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "200": { "description": "Priority updated, source marked manual" } }
+      }
+    },
+    "/admin/tickets/{id}/assign": {
+      "patch": {
+        "summary": "Assign ticket to admin",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "200": { "description": "Ticket assigned" } }
+      }
+    },
+    "/admin/tickets/{id}/notes": {
+      "post": {
+        "summary": "Add internal note (never visible to authors)",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NoteRequest" } } }
+        },
+        "responses": { "201": { "description": "Internal note saved" } }
+      }
+    },
+    "/admin/tickets/{id}/messages": {
+      "post": {
+        "summary": "Send official public response to author",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MessageRequest" } } }
+        },
+        "responses": { "201": { "description": "Message saved and emitted to author" } }
+      }
+    },
+    "/admin/tickets/{id}/ai/draft": {
+      "post": {
+        "summary": "Generate AI draft response based on Knowledge Base",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Draft response returned for admin review" } }
+      }
+    },
+    "/admin/tickets/{id}/ai/classify": {
+      "post": {
+        "summary": "Manually re-run AI auto-classification",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "200": { "description": "Classification re-evaluated" } }
+      }
+    }
+  }
+}
