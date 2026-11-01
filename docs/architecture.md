@@ -130,13 +130,16 @@ Central entity managing support inquiries:
   - `"General Inquiry"`
 - `priority`: Enum: `["Critical", "High", "Medium", "Low"]`
 - `status`: Enum: `["Open", "In Progress", "Resolved", "Closed"]` (Default: `"Open"`)
-- `classificationSource`: Enum: `["ai", "manual", "pending"]`
+- `classificationSource`: Enum: `["openai", "rule_engine", "manual", "pending", "ai"]`
 - `aiStatus`: Enum: `["pending", "success", "failed", "skipped"]`
+- `suggestedResponse`: String, nullable (policy-grounded draft reply populated upon triage)
 - `aiMeta`:
   - `confidence`: Number (0.0 to 1.0)
   - `reasoning`: String
   - `model`: String
+  - `engine`: String (`"openai"` or `"rule_engine"`)
   - `tokens`: Number
+  - `suggestedResponse`: String, nullable
   - `timestamp`: Date
 - `assignedTo`: `ObjectId`, ref `'User'`, nullable, indexed
 - `firstAdminResponseAt`: Date, nullable

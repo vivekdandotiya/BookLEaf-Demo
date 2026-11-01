@@ -1,4 +1,5 @@
 import { errorResponse } from '../utils/apiResponse.js';
+import { ENV } from '../config/env.js';
 
 export const errorHandler = (err, req, res, next) => {
   console.error(`[Error] ${req.method} ${req.url}:`, err);
@@ -32,9 +33,13 @@ export const errorHandler = (err, req, res, next) => {
     return errorResponse(res, 'Authentication token expired', 401, 'TOKEN_EXPIRED');
   }
 
-  // Fallback 500
+  // Fallback 500 - Sanitize message in production to prevent information disclosure
   const statusCode = err.statusCode || 500;
-  const message = err.message || 'Internal server error';
+  const message =
+    statusCode >= 500 && ENV.NODE_ENV === 'production'
+      ? 'An unexpected internal server error occurred'
+      : (err.message || 'Internal server error');
+
   return errorResponse(res, message, statusCode, 'INTERNAL_SERVER_ERROR');
 };
 

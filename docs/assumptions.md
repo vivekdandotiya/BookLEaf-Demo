@@ -44,11 +44,13 @@ This document records all design assumptions, edge case treatments, and reconcil
 - As clarified in PDF page 2 ("UI only—actual upload is bonus, not required"), the ticket submission form supports attachment metadata (file name, size, type) and simulated upload states with preview, avoiding external S3 bucket requirements for local and evaluation runs.
 
 ### E. AI Service Fallback & Prompt Hardening
-- If `OPENAI_API_KEY` is not configured, or if the OpenAI API returns rate limits, timeouts, or 5xx errors:
-  - The ticket creation process **never fails**. The ticket is created with `aiStatus: 'failed'` and `classificationSource: 'pending'`.
-  - The Admin UI clearly indicates AI unavailability and invites the operator to manually assign the category and priority.
+- If `OPENAI_API_KEY` is not configured, or if the OpenAI API returns rate limits (429 quota exhaustion), timeouts, or network failures:
+  - The ticket creation process **never fails**. The system automatically engages the **Local Deterministic Rule-Based Engine** (`ruleEngine.js`).
+  - The ticket is categorized into one of the 6 valid categories, assigned priority based on transparent business rules, and provided with a policy-grounded suggested response draft.
+  - The classification source is transparently marked as `rule_engine` with a distinct blue badge in the Admin Portal.
+  - If both OpenAI and the rule engine fail, the ticket is safely created with `aiStatus: 'failed'` and `classificationSource: 'pending'` for manual admin review.
 - Prompts use explicit delimiter guards (`<<<AUTHOR_QUERY>>> ... <<<END_QUERY>>>`) and strict instructions to prevent prompt-injection attacks from malicious ticket text.
-- Outputs are validated with Zod schemas. If the model produces invalid JSON, a single auto-repair retry is attempted before failing gracefully.
+- Outputs are validated with Zod schemas. If the model produces invalid JSON, a single auto-repair retry is attempted before engaging the rule-based fallback.
 
 ### F. Internal Notes Security
 - Admin internal notes are saved to an isolated collection (`InternalNotes`).
