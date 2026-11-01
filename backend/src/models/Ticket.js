@@ -84,9 +84,14 @@ const ticketSchema = new mongoose.Schema(
       enum: ['pending', 'success', 'failed', 'skipped'],
       default: 'pending',
     },
+    suggestedResponse: {
+      type: String,
+      default: null,
+    },
     aiMeta: {
       confidence: { type: Number, min: 0, max: 1, default: null },
       reasoning: { type: String, default: null },
+      suggestedResponse: { type: String, default: null },
       model: { type: String, default: null },
       tokens: { type: Number, default: null },
       timestamp: { type: Date, default: null },

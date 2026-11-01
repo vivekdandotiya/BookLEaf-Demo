@@ -80,6 +80,10 @@ export const AdminTicketDetail = () => {
           setTicket(res.data.ticket);
           setMessages(res.data.messages || []);
           setInternalNotes(res.data.internalNotes || []);
+          const existingDraft = res.data.ticket.suggestedResponse || res.data.ticket.aiMeta?.suggestedResponse;
+          if (existingDraft) {
+            setAiDraft(existingDraft);
+          }
         }
       } catch (err) {
         addToast({ type: 'error', message: err.message || 'Failed to load ticket' });
@@ -128,6 +132,20 @@ export const AdminTicketDetail = () => {
       const handleUpdated = (updated) => {
         if (updated._id === id) {
           setTicket((prev) => ({ ...prev, ...updated }));
+          const existingDraft = updated.suggestedResponse || updated.aiMeta?.suggestedResponse;
+          if (existingDraft) {
+            setAiDraft(existingDraft);
+          }
+        }
+      };
+
+      const handleClassified = (updated) => {
+        if (updated._id === id) {
+          setTicket((prev) => ({ ...prev, ...updated }));
+          const existingDraft = updated.suggestedResponse || updated.aiMeta?.suggestedResponse;
+          if (existingDraft) {
+            setAiDraft(existingDraft);
+          }
         }
       };
 
@@ -136,6 +154,7 @@ export const AdminTicketDetail = () => {
       socket.on('ticket:status_changed', handleStatusChanged);
       socket.on('ticket:assigned', handleAssigned);
       socket.on('ticket:updated', handleUpdated);
+      socket.on('ticket:classified', handleClassified);
 
       return () => {
         leaveTicketRoom(id);
@@ -144,6 +163,7 @@ export const AdminTicketDetail = () => {
         socket.off('ticket:status_changed', handleStatusChanged);
         socket.off('ticket:assigned', handleAssigned);
         socket.off('ticket:updated', handleUpdated);
+        socket.off('ticket:classified', handleClassified);
       };
     }
   }, [id, socket, joinTicketRoom, leaveTicketRoom]);
@@ -226,7 +246,11 @@ export const AdminTicketDetail = () => {
       const res = await adminService.triggerAiClassify(id);
       if (res.success && res.data?.ticket) {
         setTicket(res.data.ticket);
-        addToast({ type: 'success', message: 'AI Classification refreshed' });
+        const refreshedDraft = res.data.ticket.suggestedResponse || res.data.ticket.aiMeta?.suggestedResponse;
+        if (refreshedDraft) {
+          setAiDraft(refreshedDraft);
+        }
+        addToast({ type: 'success', message: 'AI Classification and suggested response refreshed' });
       }
     } catch (err) {
       addToast({ type: 'error', message: err.message || 'Reclassification failed' });
@@ -676,8 +700,20 @@ export const AdminTicketDetail = () => {
 
                   {aiDraft && (
                     <div className="space-y-2">
-                      <div className="p-3 bg-paper-50 rounded-lg border border-paper-300 text-xs text-ink-900 leading-relaxed max-h-60 overflow-y-auto whitespace-pre-wrap font-sans">
-                        {aiDraft}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-[10px] uppercase font-bold text-ink-500">
+                            Suggested Response (Editable):
+                          </label>
+                          <span className="text-[10px] text-ink-400">Admin Approval Required</span>
+                        </div>
+                        <textarea
+                          value={aiDraft}
+                          onChange={(e) => setAiDraft(e.target.value)}
+                          rows={6}
+                          className="w-full p-2.5 bg-paper-50 rounded-lg border border-paper-300 text-xs text-ink-900 leading-relaxed font-sans focus:outline-none focus:ring-1 focus:ring-brand"
+                          placeholder="AI response draft..."
+                        />
                       </div>
 
                       <div className="flex gap-2">

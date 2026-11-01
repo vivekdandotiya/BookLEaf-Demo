@@ -4,17 +4,44 @@ import { ENV } from '../config/env.js';
 import {
   CLASSIFICATION_SYSTEM_PROMPT,
   RESPONSE_DRAFT_SYSTEM_PROMPT,
+  UNIFIED_TICKET_AI_SYSTEM_PROMPT,
 } from './prompts.js';
 import { getRelevantKnowledgeBase } from './knowledgeBase.js';
 import { draftCache } from './draftCache.js';
 import { TICKET_CATEGORIES, TICKET_PRIORITIES } from '../models/Ticket.js';
 
-let openaiClient = null;
-if (ENV.OPENAI_API_KEY && ENV.OPENAI_API_KEY.trim().length > 0) {
-  openaiClient = new OpenAI({ apiKey: ENV.OPENAI_API_KEY });
+let customOpenAIClient = undefined;
+
+/**
+ * Configure or override OpenAI client (primarily for testing and mock injection)
+ */
+export function setOpenAIClient(client) {
+  customOpenAIClient = client;
 }
 
-const classificationSchema = z.object({
+/**
+ * Lazily instantiate and return the active OpenAI client
+ */
+export function getOpenAIClient() {
+  if (customOpenAIClient !== undefined) {
+    return customOpenAIClient;
+  }
+  const key = (process.env.OPENAI_API_KEY || ENV.OPENAI_API_KEY || '').trim();
+  if (!key) {
+    return null;
+  }
+  return new OpenAI({ apiKey: key });
+}
+
+export const unifiedTicketAISchema = z.object({
+  category: z.enum(TICKET_CATEGORIES),
+  priority: z.enum(TICKET_PRIORITIES),
+  confidence: z.number().min(0).max(1),
+  reasoning: z.string().min(5),
+  suggestedResponse: z.string().min(10),
+});
+
+export const classificationSchema = z.object({
   category: z.enum(TICKET_CATEGORIES),
   priority: z.enum(TICKET_PRIORITIES),
   confidence: z.number().min(0).max(1),
@@ -22,54 +49,81 @@ const classificationSchema = z.object({
 });
 
 /**
- * Classify and prioritize an incoming ticket
+ * Unified AI processor for ticket creation:
+ * Concurrently classifies into 6 categories, assigns priority, provides grounded explanation,
+ * and generates a professional suggested response draft for admin review.
  */
-export async function classifyAndPrioritize({ subject, description, bookContext, authorContext }) {
-  if (!openaiClient) {
+export async function processTicketAI({ subject, description, bookContext, authorContext }) {
+  const client = getOpenAIClient();
+  if (!client) {
     return {
       success: false,
       reason: 'OPENAI_API_KEY not configured. Manual triage required.',
     };
   }
 
+  // Retrieve relevant knowledge base policies
+  const relevantKB = getRelevantKnowledgeBase('General Inquiry', `${subject} ${description}`);
+
   const userContent = `
 Author Details:
-- Name: ${authorContext?.name || 'N/A'}
+- Name: ${authorContext?.name || 'Valued Author'}
+- Email: ${authorContext?.email || 'N/A'}
 - City: ${authorContext?.city || 'N/A'}
+- Author ID: ${authorContext?.author_id || 'N/A'}
 - Joined: ${authorContext?.joined_date ? new Date(authorContext.joined_date).toISOString().split('T')[0] : 'N/A'}
 
 Book Details:
-- Title: ${bookContext?.title || 'General Account Inquiry (No book specified)'}
+- Title: ${bookContext?.title || 'General Account Inquiry (No book attached)'}
 - ISBN: ${bookContext?.isbn || 'N/A'}
 - Status: ${bookContext?.status || 'N/A'}
+- MRP: ${bookContext?.mrp !== null && bookContext?.mrp !== undefined ? `₹${bookContext.mrp}` : 'N/A'}
 - Publication Date: ${bookContext?.publication_date ? new Date(bookContext.publication_date).toISOString().split('T')[0] : 'N/A'}
+- Total Sold: ${bookContext?.total_copies_sold ?? 'N/A'}
 - Royalty Earned: ₹${bookContext?.total_royalty_earned ?? 'N/A'}
 - Royalty Paid: ₹${bookContext?.royalty_paid ?? 'N/A'}
 - Royalty Pending: ₹${bookContext?.royalty_pending ?? 'N/A'}
 - Last Payout: ${bookContext?.last_royalty_payout_date ? new Date(bookContext.last_royalty_payout_date).toISOString().split('T')[0] : 'None'}
+- Print Partner: ${bookContext?.print_partner || 'In-House'}
+- Active Channels: ${bookContext?.available_on?.join(', ') || 'N/A'}
 
-Author Ticket Query:
+Applicable BookLeaf Policies & Standards:
+${JSON.stringify(relevantKB, null, 2)}
+
+Author Ticket Inquiry:
 <<<AUTHOR_QUERY>>>
 Subject: ${subject}
 Description: ${description}
 <<<END_QUERY>>>
+
+Classify this ticket, assign priority, explain your reasoning, and draft a professional suggested response.
 `;
 
   try {
-    const response = await openaiClient.chat.completions.create({
-      model: ENV.OPENAI_MODEL,
+    const response = await client.chat.completions.create({
+      model: process.env.OPENAI_MODEL || ENV.OPENAI_MODEL || 'gpt-4o-mini',
       messages: [
-        { role: 'system', content: CLASSIFICATION_SYSTEM_PROMPT },
+        { role: 'system', content: UNIFIED_TICKET_AI_SYSTEM_PROMPT },
         { role: 'user', content: userContent },
       ],
       response_format: { type: 'json_object' },
-      temperature: 0.1,
-      max_tokens: 300,
+      temperature: 0.2,
+      max_tokens: 800,
     });
 
-    const rawContent = response.choices[0]?.message?.content;
-    const parsed = JSON.parse(rawContent);
-    const validated = classificationSchema.parse(parsed);
+    const rawContent = response.choices?.[0]?.message?.content;
+    if (!rawContent) {
+      throw new Error('OpenAI returned an empty response');
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(rawContent);
+    } catch (parseErr) {
+      throw new Error(`OpenAI response was not valid JSON: ${parseErr.message}`);
+    }
+
+    const validated = unifiedTicketAISchema.parse(parsed);
 
     return {
       success: true,
@@ -78,17 +132,26 @@ Description: ${description}
         priority: validated.priority,
         confidence: validated.confidence,
         reasoning: validated.reasoning,
-        model: response.model,
+        suggestedResponse: validated.suggestedResponse,
+        model: response.model || process.env.OPENAI_MODEL || ENV.OPENAI_MODEL || 'gpt-4o-mini',
         tokens: response.usage?.total_tokens || 0,
       },
     };
   } catch (err) {
-    console.error('[AI Service] Classification error:', err.message);
+    const sanitizedMsg = (err.message || 'Unknown AI error').replace(/sk-[a-zA-Z0-9_\-]{20,}/g, '[REDACTED_API_KEY]');
+    console.error('[AI Service] Ticket AI error:', sanitizedMsg);
     return {
       success: false,
-      reason: err.message,
+      reason: sanitizedMsg,
     };
   }
+}
+
+/**
+ * Classify and prioritize an incoming ticket (delegates to unified processor)
+ */
+export async function classifyAndPrioritize(args) {
+  return processTicketAI(args);
 }
 
 /**
@@ -115,7 +178,8 @@ export async function generateDraftResponse({
     };
   }
 
-  if (!openaiClient) {
+  const client = getOpenAIClient();
+  if (!client) {
     return {
       success: false,
       draft: null,
@@ -163,8 +227,8 @@ Draft an empathetic, polite, and policy-accurate reply to the author. Follow all
 `;
 
   try {
-    const response = await openaiClient.chat.completions.create({
-      model: ENV.OPENAI_MODEL,
+    const response = await client.chat.completions.create({
+      model: process.env.OPENAI_MODEL || ENV.OPENAI_MODEL || 'gpt-4o-mini',
       messages: [
         { role: 'system', content: RESPONSE_DRAFT_SYSTEM_PROMPT },
         { role: 'user', content: userPrompt },
@@ -173,7 +237,7 @@ Draft an empathetic, polite, and policy-accurate reply to the author. Follow all
       max_tokens: 650,
     });
 
-    const draft = response.choices[0]?.message?.content?.trim();
+    const draft = response.choices?.[0]?.message?.content?.trim();
     if (!draft) {
       throw new Error('OpenAI returned an empty response');
     }
@@ -189,11 +253,12 @@ Draft an empathetic, polite, and policy-accurate reply to the author. Follow all
       tokens: response.usage?.total_tokens || 0,
     };
   } catch (err) {
-    console.error('[AI Service] Draft generation error:', err.message);
+    const sanitizedMsg = (err.message || 'Unknown error').replace(/sk-[a-zA-Z0-9_\-]{20,}/g, '[REDACTED_API_KEY]');
+    console.error('[AI Service] Draft generation error:', sanitizedMsg);
     return {
       success: false,
       draft: null,
-      error: `AI drafting failed: ${err.message}. Please respond manually.`,
+      error: `AI drafting failed: ${sanitizedMsg}. Please respond manually.`,
     };
   }
 }

@@ -5,6 +5,7 @@ import { Message } from '../models/Message.js';
 import { InternalNote } from '../models/InternalNote.js';
 import { User } from '../models/User.js';
 import { classifyAndPrioritize, generateDraftResponse } from '../ai/aiService.js';
+import { draftCache } from '../ai/draftCache.js';
 import {
   emitTicketStatusChanged,
   emitTicketAssigned,
@@ -484,13 +485,18 @@ export const triggerAiClassification = async (req, res, next) => {
       ticket.priority = aiResult.data.priority;
       ticket.classificationSource = 'ai';
       ticket.aiStatus = 'success';
+      ticket.suggestedResponse = aiResult.data.suggestedResponse || null;
       ticket.aiMeta = {
         confidence: aiResult.data.confidence,
         reasoning: aiResult.data.reasoning,
+        suggestedResponse: aiResult.data.suggestedResponse || null,
         model: aiResult.data.model,
         tokens: aiResult.data.tokens,
         timestamp: new Date(),
       };
+      if (aiResult.data.suggestedResponse) {
+        draftCache.set(ticket._id.toString(), 'initial', aiResult.data.suggestedResponse);
+      }
     } else {
       ticket.aiStatus = 'failed';
       ticket.classificationSource = 'pending';
