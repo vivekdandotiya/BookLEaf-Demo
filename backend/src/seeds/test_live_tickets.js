@@ -94,10 +94,14 @@ async function main() {
     });
 
     if (aiResult.success) {
-      console.log('✅ Real OpenAI request succeeded!');
+      if (aiResult.source === 'openai') {
+        console.log('✅ OpenAI request succeeded!');
+      } else {
+        console.log('✅ Local Rule-Based Engine classified successfully (Source: rule_engine)!');
+      }
       ticket.category = aiResult.data.category;
       ticket.priority = aiResult.data.priority;
-      ticket.classificationSource = 'ai';
+      ticket.classificationSource = aiResult.source === 'openai' ? 'openai' : 'rule_engine';
       ticket.aiStatus = 'success';
       ticket.suggestedResponse = aiResult.data.suggestedResponse;
       ticket.aiMeta = {
@@ -105,10 +109,12 @@ async function main() {
         reasoning: aiResult.data.reasoning,
         suggestedResponse: aiResult.data.suggestedResponse,
         model: aiResult.data.model,
+        engine: aiResult.source,
         tokens: aiResult.data.tokens,
         timestamp: new Date(),
       };
       console.log('Classified as:', ticket.category, '| Priority:', ticket.priority);
+      console.log('Classification Source:', ticket.classificationSource);
       console.log('Reasoning:', ticket.aiMeta.reasoning);
       console.log('Suggested Response Preview:', ticket.suggestedResponse.slice(0, 100) + '...');
     } else {

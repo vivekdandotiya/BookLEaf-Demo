@@ -66,7 +66,7 @@ export const createTicket = async (req, res, next) => {
         if (aiResult.success) {
           ticket.category = aiResult.data.category;
           ticket.priority = aiResult.data.priority;
-          ticket.classificationSource = 'ai';
+          ticket.classificationSource = aiResult.source === 'openai' ? 'openai' : 'rule_engine';
           ticket.aiStatus = 'success';
           ticket.suggestedResponse = aiResult.data.suggestedResponse || null;
           ticket.aiMeta = {
@@ -74,7 +74,8 @@ export const createTicket = async (req, res, next) => {
             reasoning: aiResult.data.reasoning,
             suggestedResponse: aiResult.data.suggestedResponse || null,
             model: aiResult.data.model,
-            tokens: aiResult.data.tokens,
+            engine: aiResult.source || 'rule_engine',
+            tokens: aiResult.data.tokens || 0,
             timestamp: new Date(),
           };
           if (aiResult.data.suggestedResponse) {

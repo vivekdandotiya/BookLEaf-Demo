@@ -9,6 +9,9 @@ import {
 import { getRelevantKnowledgeBase } from './knowledgeBase.js';
 import { draftCache } from './draftCache.js';
 import { TICKET_CATEGORIES, TICKET_PRIORITIES } from '../models/Ticket.js';
+import { classifyWithRuleEngine, generateRuleBasedResponse } from './ruleEngine.js';
+
+export { classifyWithRuleEngine, generateRuleBasedResponse };
 
 let customOpenAIClient = undefined;
 
@@ -50,22 +53,20 @@ export const classificationSchema = z.object({
 
 /**
  * Unified AI processor for ticket creation:
- * Concurrently classifies into 6 categories, assigns priority, provides grounded explanation,
- * and generates a professional suggested response draft for admin review.
+ * If OpenAI is configured and available, classifies and drafts using gpt-4o-mini.
+ * If OpenAI is unavailable, quota exhausted (429), or disabled, seamlessly engages
+ * the Local Rule-Based Engine without failing ticket creation.
  */
 export async function processTicketAI({ subject, description, bookContext, authorContext }) {
   const client = getOpenAIClient();
-  if (!client) {
-    return {
-      success: false,
-      reason: 'OPENAI_API_KEY not configured. Manual triage required.',
-    };
-  }
 
-  // Retrieve relevant knowledge base policies
-  const relevantKB = getRelevantKnowledgeBase('General Inquiry', `${subject} ${description}`);
+  // If OpenAI client is configured, attempt LLM processing first
+  if (client) {
+    try {
+      // Retrieve relevant knowledge base policies
+      const relevantKB = getRelevantKnowledgeBase('General Inquiry', `${subject} ${description}`);
 
-  const userContent = `
+      const userContent = `
 Author Details:
 - Name: ${authorContext?.name || 'Valued Author'}
 - Email: ${authorContext?.email || 'N/A'}
@@ -99,52 +100,67 @@ Description: ${description}
 Classify this ticket, assign priority, explain your reasoning, and draft a professional suggested response.
 `;
 
-  try {
-    const response = await client.chat.completions.create({
-      model: process.env.OPENAI_MODEL || ENV.OPENAI_MODEL || 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: UNIFIED_TICKET_AI_SYSTEM_PROMPT },
-        { role: 'user', content: userContent },
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0.2,
-      max_tokens: 800,
-    });
+      const response = await client.chat.completions.create({
+        model: process.env.OPENAI_MODEL || ENV.OPENAI_MODEL || 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: UNIFIED_TICKET_AI_SYSTEM_PROMPT },
+          { role: 'user', content: userContent },
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.2,
+        max_tokens: 800,
+      });
 
-    const rawContent = response.choices?.[0]?.message?.content;
-    if (!rawContent) {
-      throw new Error('OpenAI returned an empty response');
+      const rawContent = response.choices?.[0]?.message?.content;
+      if (!rawContent) {
+        throw new Error('OpenAI returned an empty response');
+      }
+
+      let parsed;
+      try {
+        parsed = JSON.parse(rawContent);
+      } catch (parseErr) {
+        throw new Error(`OpenAI response was not valid JSON: ${parseErr.message}`);
+      }
+
+      const validated = unifiedTicketAISchema.parse(parsed);
+
+      return {
+        success: true,
+        source: 'openai',
+        data: {
+          category: validated.category,
+          priority: validated.priority,
+          confidence: validated.confidence,
+          reasoning: validated.reasoning,
+          suggestedResponse: validated.suggestedResponse,
+          model: response.model || process.env.OPENAI_MODEL || ENV.OPENAI_MODEL || 'gpt-4o-mini',
+          tokens: response.usage?.total_tokens || 0,
+        },
+      };
+    } catch (err) {
+      const sanitizedMsg = (err.message || 'Unknown AI error').replace(/sk-[a-zA-Z0-9_\-]{20,}/g, '[REDACTED_API_KEY]');
+      console.warn(`[AI Service] OpenAI provider error (${sanitizedMsg}). Engaging Local Rule-Based Engine fallback.`);
+
+      // Seamless fallback to Local Rule-Based Engine
+      const ruleResult = classifyWithRuleEngine({ subject, description, bookContext, authorContext });
+      return {
+        success: true,
+        source: 'rule_engine',
+        fallbackReason: sanitizedMsg,
+        data: ruleResult.data,
+      };
     }
-
-    let parsed;
-    try {
-      parsed = JSON.parse(rawContent);
-    } catch (parseErr) {
-      throw new Error(`OpenAI response was not valid JSON: ${parseErr.message}`);
-    }
-
-    const validated = unifiedTicketAISchema.parse(parsed);
-
-    return {
-      success: true,
-      data: {
-        category: validated.category,
-        priority: validated.priority,
-        confidence: validated.confidence,
-        reasoning: validated.reasoning,
-        suggestedResponse: validated.suggestedResponse,
-        model: response.model || process.env.OPENAI_MODEL || ENV.OPENAI_MODEL || 'gpt-4o-mini',
-        tokens: response.usage?.total_tokens || 0,
-      },
-    };
-  } catch (err) {
-    const sanitizedMsg = (err.message || 'Unknown AI error').replace(/sk-[a-zA-Z0-9_\-]{20,}/g, '[REDACTED_API_KEY]');
-    console.error('[AI Service] Ticket AI error:', sanitizedMsg);
-    return {
-      success: false,
-      reason: sanitizedMsg,
-    };
   }
+
+  // Operating without OpenAI credits / key: Use Local Rule-Based Engine directly
+  console.log('[AI Service] Operating without external LLM provider. Utilizing Local Rule-Based Engine.');
+  const ruleResult = classifyWithRuleEngine({ subject, description, bookContext, authorContext });
+  return {
+    success: true,
+    source: 'rule_engine',
+    data: ruleResult.data,
+  };
 }
 
 /**
@@ -174,16 +190,29 @@ export async function generateDraftResponse({
     return {
       success: true,
       draft: cachedDraft,
+      source: 'cache',
       cached: true,
     };
   }
 
   const client = getOpenAIClient();
   if (!client) {
+    // Generate grounded rule-based draft template
+    const ruleDraft = generateRuleBasedResponse({
+      category,
+      priority,
+      subject,
+      description,
+      authorContext,
+      bookContext,
+    });
+    draftCache.set(ticketId, lastMessageId, ruleDraft);
     return {
-      success: false,
-      draft: null,
-      error: 'OPENAI_API_KEY is not configured on the server. Please write a manual response.',
+      success: true,
+      draft: ruleDraft,
+      source: 'rule_engine',
+      cached: false,
+      model: 'local-rule-engine-v1',
     };
   }
 
@@ -248,17 +277,31 @@ Draft an empathetic, polite, and policy-accurate reply to the author. Follow all
     return {
       success: true,
       draft,
+      source: 'openai',
       cached: false,
       model: response.model,
       tokens: response.usage?.total_tokens || 0,
     };
   } catch (err) {
     const sanitizedMsg = (err.message || 'Unknown error').replace(/sk-[a-zA-Z0-9_\-]{20,}/g, '[REDACTED_API_KEY]');
-    console.error('[AI Service] Draft generation error:', sanitizedMsg);
+    console.warn(`[AI Service] OpenAI draft error (${sanitizedMsg}). Falling back to Local Rule-Based template draft.`);
+
+    const ruleDraft = generateRuleBasedResponse({
+      category,
+      priority,
+      subject,
+      description,
+      authorContext,
+      bookContext,
+    });
+    draftCache.set(ticketId, lastMessageId, ruleDraft);
+
     return {
-      success: false,
-      draft: null,
-      error: `AI drafting failed: ${sanitizedMsg}. Please respond manually.`,
+      success: true,
+      draft: ruleDraft,
+      source: 'rule_engine',
+      cached: false,
+      model: 'local-rule-engine-v1',
     };
   }
 }

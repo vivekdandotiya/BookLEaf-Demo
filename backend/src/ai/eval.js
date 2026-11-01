@@ -93,6 +93,7 @@ async function runEvaluation() {
       const catMatch = actualCat === tc.expectedCategory;
       if (catMatch) matchedCategories++;
 
+      console.log(`Source:   ${result.source === 'openai' ? 'OpenAI (gpt-4o-mini)' : 'Local Rule-Based Engine'}`);
       console.log(`Actual:   Category='${actualCat}', Priority='${actualPri}', Confidence=${(result.data.confidence * 100).toFixed(0)}%`);
       console.log(`Reasoning: ${result.data.reasoning}`);
       console.log(`Result:   ${catMatch ? '✅ MATCH' : '❌ MISMATCH'}\n`);

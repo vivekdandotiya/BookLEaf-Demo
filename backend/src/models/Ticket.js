@@ -76,12 +76,12 @@ const ticketSchema = new mongoose.Schema(
     },
     classificationSource: {
       type: String,
-      enum: ['ai', 'manual', 'pending'],
+      enum: ['openai', 'rule_engine', 'manual', 'pending', 'ai'],
       default: 'pending',
     },
     aiStatus: {
       type: String,
-      enum: ['pending', 'success', 'failed', 'skipped'],
+      enum: ['pending', 'success', 'failed', 'skipped', 'rule_engine_success'],
       default: 'pending',
     },
     suggestedResponse: {
@@ -93,6 +93,7 @@ const ticketSchema = new mongoose.Schema(
       reasoning: { type: String, default: null },
       suggestedResponse: { type: String, default: null },
       model: { type: String, default: null },
+      engine: { type: String, default: null },
       tokens: { type: Number, default: null },
       timestamp: { type: Date, default: null },
     },

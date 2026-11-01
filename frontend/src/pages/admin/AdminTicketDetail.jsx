@@ -7,7 +7,7 @@ import { useToast } from '../../context/ToastContext';
 import { Card, CardHeader, CardBody } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { Textarea } from '../../components/common/Input';
-import { StatusBadge, PriorityBadge, CategoryBadge, BookStatusBadge } from '../../components/common/Badge';
+import { StatusBadge, PriorityBadge, CategoryBadge, BookStatusBadge, ClassificationSourceBadge } from '../../components/common/Badge';
 import { Skeleton } from '../../components/common/Skeleton';
 import {
   ArrowLeft,
@@ -620,13 +620,26 @@ export const AdminTicketDetail = () => {
             </button>
           </div>
 
-          {/* TAB 1: AI COPILOT */}
+          {/* TAB 1: AI / RULE ENGINE COPILOT */}
           {activeTab === 'ai' && (
             <div className="space-y-4">
               {/* Classification & Reasoning Card */}
               <Card>
                 <CardHeader
-                  title="AI Classification & Severity"
+                  title={
+                    ticket.classificationSource === 'rule_engine'
+                      ? 'Rule-Based Classification'
+                      : ticket.classificationSource === 'openai' || ticket.classificationSource === 'ai'
+                      ? 'OpenAI Classification'
+                      : 'Ticket Classification'
+                  }
+                  subtitle={
+                    ticket.classificationSource === 'rule_engine'
+                      ? 'Local deterministic rule engine'
+                      : ticket.classificationSource === 'openai' || ticket.classificationSource === 'ai'
+                      ? 'gpt-4o-mini copilot'
+                      : 'Manual triage'
+                  }
                   action={
                     <Button
                       variant="ghost"
@@ -638,12 +651,17 @@ export const AdminTicketDetail = () => {
                   }
                 />
                 <CardBody className="p-4 space-y-3 text-xs">
+                  <div className="flex items-center justify-between pb-2 border-b border-paper-200">
+                    <span className="text-ink-600 font-medium">Classification Source:</span>
+                    <ClassificationSourceBadge source={ticket.classificationSource} />
+                  </div>
+
                   <div className="flex items-center justify-between">
-                    <span className="text-ink-500">Auto Category:</span>
+                    <span className="text-ink-500">Category:</span>
                     <CategoryBadge category={ticket.category} />
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-ink-500">Auto Priority:</span>
+                    <span className="text-ink-500">Priority:</span>
                     <PriorityBadge priority={ticket.priority} />
                   </div>
 
@@ -668,7 +686,12 @@ export const AdminTicketDetail = () => {
 
                       {ticket.aiMeta.reasoning && (
                         <div className="p-2.5 rounded bg-paper-50 border border-paper-200 text-ink-700 text-[11px] leading-relaxed">
-                          <strong>Grounded Reasoning:</strong> {ticket.aiMeta.reasoning}
+                          <strong>
+                            {ticket.classificationSource === 'rule_engine'
+                              ? 'Rule Decision Rationale:'
+                              : 'Grounded Reasoning:'}
+                          </strong>{' '}
+                          {ticket.aiMeta.reasoning}
                         </div>
                       )}
                     </div>
@@ -678,7 +701,18 @@ export const AdminTicketDetail = () => {
 
               {/* Response Drafting Card */}
               <Card>
-                <CardHeader title="AI Response Drafting" subtitle="Grounded strictly in BookLeaf policies" />
+                <CardHeader
+                  title={
+                    ticket.classificationSource === 'rule_engine'
+                      ? 'Suggested Policy Draft'
+                      : 'AI Response Drafting'
+                  }
+                  subtitle={
+                    ticket.classificationSource === 'rule_engine'
+                      ? 'Template draft grounded in BookLeaf policies'
+                      : 'Grounded strictly in BookLeaf policies'
+                  }
+                />
                 <CardBody className="p-4 space-y-3">
                   <Button
                     variant="primary"
@@ -688,7 +722,9 @@ export const AdminTicketDetail = () => {
                     icon={Sparkles}
                     className="w-full"
                   >
-                    Generate AI Draft
+                    {ticket.classificationSource === 'rule_engine'
+                      ? 'Regenerate Policy Draft'
+                      : 'Generate AI Draft'}
                   </Button>
 
                   {draftError && (
@@ -703,7 +739,9 @@ export const AdminTicketDetail = () => {
                       <div>
                         <div className="flex items-center justify-between mb-1">
                           <label className="text-[10px] uppercase font-bold text-ink-500">
-                            Suggested Response (Editable):
+                            {ticket.classificationSource === 'rule_engine'
+                              ? 'Suggested Response (Policy-Grounded Draft):'
+                              : 'Suggested Response (AI Draft):'}
                           </label>
                           <span className="text-[10px] text-ink-400">Admin Approval Required</span>
                         </div>
@@ -712,7 +750,7 @@ export const AdminTicketDetail = () => {
                           onChange={(e) => setAiDraft(e.target.value)}
                           rows={6}
                           className="w-full p-2.5 bg-paper-50 rounded-lg border border-paper-300 text-xs text-ink-900 leading-relaxed font-sans focus:outline-none focus:ring-1 focus:ring-brand"
-                          placeholder="AI response draft..."
+                          placeholder="Suggested response draft..."
                         />
                       </div>
 
@@ -727,7 +765,7 @@ export const AdminTicketDetail = () => {
                         </Button>
                       </div>
                       <p className="text-[10px] text-ink-400 text-center">
-                        *AI drafts require human approval and are never auto-sent.
+                        *Draft responses require human approval and are never auto-sent.
                       </p>
                     </div>
                   )}

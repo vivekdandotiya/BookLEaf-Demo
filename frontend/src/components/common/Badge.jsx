@@ -69,3 +69,35 @@ export const BookStatusBadge = ({ status }) => {
     </span>
   );
 };
+
+export const ClassificationSourceBadge = ({ source }) => {
+  if (source === 'openai' || source === 'ai') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-purple-50 text-purple-700 border border-purple-200">
+        <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
+        OpenAI
+      </span>
+    );
+  }
+  if (source === 'rule_engine') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
+        <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+        Local Rule-Based Engine
+      </span>
+    );
+  }
+  if (source === 'manual') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+        Manual Admin Review
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-paper-100 text-ink-500 border border-paper-300">
+      Pending Triage
+    </span>
+  );
+};

@@ -5,7 +5,7 @@ import { useSocket } from '../../context/SocketContext';
 import { useToast } from '../../context/ToastContext';
 import { Card, CardBody } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
-import { StatusBadge, PriorityBadge, CategoryBadge } from '../../components/common/Badge';
+import { StatusBadge, PriorityBadge, CategoryBadge, ClassificationSourceBadge } from '../../components/common/Badge';
 import { Pagination } from '../../components/common/Pagination';
 import { Skeleton } from '../../components/common/Skeleton';
 import { EmptyState } from '../../components/common/EmptyState';
@@ -272,25 +272,12 @@ export const AdminTicketQueue = () => {
                         isCritical ? 'bg-red-50/40 font-medium' : isHigh ? 'bg-orange-50/30' : ''
                       }`}
                     >
-                      {/* Ticket Number */}
+                      {/* Ticket Number & Source */}
                       <td className="px-5 py-3.5 whitespace-nowrap">
-                        <span className="font-mono font-bold text-ink-900">{t.ticketNumber}</span>
-                        {t.classificationSource === 'ai' && (
-                          <span
-                            title="AI Auto-Classified"
-                            className="inline-flex items-center ml-1 text-brand"
-                          >
-                            <Sparkles className="w-3 h-3 inline" />
-                          </span>
-                        )}
-                        {t.classificationSource === 'manual' && (
-                          <span
-                            title="Admin Manual Override"
-                            className="text-[9px] font-semibold text-ink-400 block uppercase"
-                          >
-                            Manual
-                          </span>
-                        )}
+                        <span className="font-mono font-bold text-ink-900 block">{t.ticketNumber}</span>
+                        <div className="mt-1">
+                          <ClassificationSourceBadge source={t.classificationSource} />
+                        </div>
                       </td>
 
                       {/* Author */}
